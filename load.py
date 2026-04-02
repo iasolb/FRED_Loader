@@ -121,6 +121,8 @@ def pull_fred(config: Config, apply_scores: bool = True) -> pd.DataFrame | None:
     if cfg is None:
         print("Incorrect Configuration Format.")
         return None
+    if cfg.SERIES != ALL_SERIES:
+        print("Custom series catalog provided. Pulling subset of FRED data.")
 
     raw = load_fred_master(config=config)
 
