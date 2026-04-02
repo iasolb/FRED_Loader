@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import Optional
-
+import time
 from series import ALL_SERIES
 
 
@@ -108,9 +108,11 @@ def load_fred_master(config: Config) -> pd.DataFrame:
                 frames[name] = s
                 agg = "mean" if native_freq in config.MEAN_FREQS else "last"
                 print(f"  ✓ {name:<40s} ({series_id:<18s} {native_freq} → {agg})")
+                time.sleep(0.5)  # be nice to the API
             except Exception as e:
                 failed.append((series_id, name, str(e)))
                 print(f"  ✗ {name:<40s} ({series_id}) — {e}")
+                time.sleep(0.5)  # be nice to the API
 
         df = pd.DataFrame(frames)
         df = df.ffill()

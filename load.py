@@ -62,7 +62,7 @@ from series import (  # noqa: F401
 )
 
 
-def pull_fred(config: Config, apply_scores: bool = True) -> pd.DataFrame | None:
+def pull_fred(config: Config, apply_scores: bool = False) -> pd.DataFrame | None:
     """
     Pull FRED data, resample to a uniform frequency, and optionally score.
 
