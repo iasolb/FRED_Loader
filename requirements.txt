@@ -1,0 +1,14 @@
+fredapi
+pandas
+numpy
+python-dotenv
+geopandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+statsmodels
+plotly
+nbformat>=4.2.0
+kaleido
+pytest
