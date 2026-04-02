@@ -51,7 +51,7 @@ class Config:
         u_star: Optional[float] = 4.0,
     ):
         self.FILENAME = filename
-        self.OUTPUT_PATH = Path(output_path)
+        self.OUTPUT_PATH = Path(output_path).resolve()
         self.START = start
         self.RESAMPLE_RULE = resample_rule
         self.MEAN_FREQS = mean_freqs if mean_freqs is not None else {"D"}
