@@ -37,14 +37,18 @@ Available categories::
     SEP        — FOMC dot-plot medians (fed funds, GDP, unemployment, PCE)
 """
 
+import os
+
+# assure the imports read from library parent directory (for users running from the project root)
+import sys
 from pathlib import Path
 from typing import Optional
 import pandas as pd
-from loader import Config, load_fred_master
-from macro_scores import score
+from .loader import Config, load_fred_master
+from .macro_scores import score
 
 # Re-export every category so users only need `from load import ...`
-from series import (  # noqa: F401
+from .series import (  # noqa: F401
     INFLATION,
     OUTPUT,
     LABOR,
@@ -135,6 +139,8 @@ def pull_fred(config: Config, apply_scores: bool = False) -> pd.DataFrame | None
     else:
         output = raw
     # ── Save ──────────────────────────────────────────────────────────────
+    # set reference to project root (for reproducibility across environments) and ensure output dir exists
+
     config.OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
     out_file = config.OUTPUT_PATH / config.FILENAME
     output.to_csv(out_file)

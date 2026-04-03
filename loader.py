@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Optional
 import time
-from series import ALL_SERIES
+from .series import ALL_SERIES
 
 
 class Config:
