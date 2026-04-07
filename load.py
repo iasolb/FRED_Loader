@@ -44,7 +44,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 import pandas as pd
-from .loader import Config, load_fred_master
+from .utils import Config, load_fred_master
 from .macro_scores import score
 
 # Re-export every category so users only need `from load import ...`
