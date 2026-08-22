@@ -13,7 +13,7 @@ Adding a new score:
     3. That's it — resolution, ordering, and catalog are automatic.
 
 Usage:
-    from macro_scores import score, available_scores, list_scored_columns
+    from fred_loader import score, available_scores, list_scored_columns
 
     scored = score(df)                      # compute everything possible
     preview = available_scores(df)          # dry run — what WOULD be computed

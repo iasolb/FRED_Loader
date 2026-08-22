@@ -33,9 +33,9 @@ class Config:
     series : dict, optional
         Custom series catalog mapping FRED IDs to (friendly_name, native_freq)
         tuples.  When None the full built-in catalog is used.
-        Build a custom one by merging category dicts from series.py::
+        Build a custom one by merging category dicts from fred_loader::
 
-            from series import INFLATION, LABOR
+            from fred_loader import INFLATION, LABOR
             Config(..., series={**INFLATION, **LABOR})
     """
 

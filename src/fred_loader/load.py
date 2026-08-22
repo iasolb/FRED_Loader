@@ -6,14 +6,14 @@ Single entry point for pulling, resampling, and scoring FRED macro data.
 
 Quick start::
 
-    from load import pull_fred
+    from fred_loader import pull_fred
 
     # Full ~80-series macro dataset with scores
     df = pull_fred("fred_master.csv", output_path="./data")
 
 Cherry-pick series categories::
 
-    from load import pull_fred, INFLATION, LABOR, RATES
+    from fred_loader import pull_fred, INFLATION, LABOR, RATES
 
     df = pull_fred(
         "policy_inputs.csv",
@@ -37,17 +37,11 @@ Available categories::
     SEP        — FOMC dot-plot medians (fed funds, GDP, unemployment, PCE)
 """
 
-import os
-
-# assure the imports read from library parent directory (for users running from the project root)
-import sys
-from pathlib import Path
-from typing import Optional
 import pandas as pd
 from .utils import Config, load_fred_master
 from .macro_scores import score
 
-# Re-export every category so users only need `from load import ...`
+# Re-export every category so users only need `from fred_loader import ...`
 from .series import (  # noqa: F401
     INFLATION,
     OUTPUT,
@@ -97,7 +91,7 @@ def pull_fred(config: Config, apply_scores: bool = False) -> pd.DataFrame | None
         ``(friendly_name, native_frequency)`` tuples.  Build one by
         merging category dicts::
 
-            from load import INFLATION, LABOR, RATES
+            from fred_loader import INFLATION, LABOR, RATES
             series = {**INFLATION, **LABOR, **RATES}
 
         When ``None`` (default), the full built-in catalog is used.

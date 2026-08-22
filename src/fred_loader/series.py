@@ -5,9 +5,9 @@ FRED Series Catalog
 
 Hierarchical catalog with two levels of granularity:
 
-    Subcategory:  from series import CPI, PPI, TREASURIES
-    Category:     from series import INFLATION, RATES
-    Everything:   from series import ALL_SERIES
+    Subcategory:  from fred_loader import CPI, PPI, TREASURIES
+    Category:     from fred_loader import INFLATION, RATES
+    Everything:   from fred_loader import ALL_SERIES
 
 Every series uses the most granular native frequency available from FRED.
 The loader resamples to the user's chosen output frequency (default W-FRI).
