@@ -2,7 +2,7 @@
 
 from .load import pull_fred
 from .macro_scores import available_scores, list_scored_columns, score
-from .utils import Config
+from .utils import Config, available, info, resolve_series, search
 
 # Categories
 from .series import INFLATION, OUTPUT, LABOR, RATES, MONEY, HOUSING, CONSUMER
@@ -30,6 +30,11 @@ __all__ = [
     "score",
     "available_scores",
     "list_scored_columns",
+    # Discovery: browse and search the catalog without reading series.py
+    "available",
+    "search",
+    "info",
+    "resolve_series",
     # Composites and lookups
     "ALL_SERIES",
     "CATEGORIES",

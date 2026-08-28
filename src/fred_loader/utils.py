@@ -5,7 +5,172 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Optional
 import time
-from .series import ALL_SERIES
+from .series import ALL_SERIES, CATEGORIES, SUBCATEGORIES
+
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  SERIES RESOLVER                                                        ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# Flattened so a subcategory can be named without knowing its parent.
+_SUBCATEGORY_FLAT: dict[str, dict] = {}
+for _cat, _subs in SUBCATEGORIES.items():
+    for _subname, _subdict in _subs.items():
+        _SUBCATEGORY_FLAT[_subname] = _subdict
+
+
+def _resolve_one(token: str) -> dict:
+    """Resolve one string token into a series dict.
+
+    Order: exact series id, then category, then subcategory.
+    """
+    upper = token.upper()
+
+    if upper in ALL_SERIES:
+        return {upper: ALL_SERIES[upper]}
+    if upper in CATEGORIES:
+        return CATEGORIES[upper]
+    if upper in _SUBCATEGORY_FLAT:
+        return _SUBCATEGORY_FLAT[upper]
+
+    raise KeyError(
+        f"'{token}' is not a recognized series, category, or subcategory.\n"
+        f"  Use available() to browse, or search('keyword') to find series."
+    )
+
+
+def resolve_series(spec) -> dict:
+    """Turn a flexible series specification into the internal series dict.
+
+    Accepted inputs
+    ---------------
+    None                        -> ALL_SERIES (everything)
+    "CPIAUCSL"                  -> a single series
+    "INFLATION"                 -> an entire category
+    "CPI"                       -> a subcategory
+    ["CPI", "TREASURIES"]       -> mix and match, merged
+    dict                        -> passed straight through
+
+    A dict passes through untouched, so every existing caller keeps working.
+    """
+    if spec is None:
+        return ALL_SERIES
+    if isinstance(spec, dict):
+        return spec
+    if isinstance(spec, str):
+        return _resolve_one(spec)
+    if isinstance(spec, (list, tuple)):
+        merged: dict = {}
+        for token in spec:
+            merged.update(_resolve_one(token))
+        return merged
+
+    raise TypeError(
+        f"series must be None, str, list[str], or dict, got {type(spec).__name__}"
+    )
+
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  DISCOVERY, browse and search the catalog without reading series.py      ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+
+def available(category: str | None = None) -> None:
+    """Print what is in the catalog.
+
+    Call with no arguments for the categories, then pass one to drill in::
+
+        available()             # every category
+        available("INFLATION")  # series inside a category
+        available("CPI")        # series inside a subcategory
+    """
+    if category is None:
+        print("Categories  (pass one to available() to drill down)\n")
+        for cat_name, cat_dict in CATEGORIES.items():
+            subs = list(SUBCATEGORIES.get(cat_name, {}).keys())
+            sub_str = f"\n    L {', '.join(subs)}" if subs else ""
+            print(f"  {cat_name:<20s} ({len(cat_dict):>3d} series){sub_str}")
+        print(f"\n  {'TOTAL':<20s} ({len(ALL_SERIES):>3d} series)")
+        return
+
+    upper = category.upper()
+    if upper in CATEGORIES:
+        target, label = CATEGORIES[upper], f"Category: {upper}"
+    elif upper in _SUBCATEGORY_FLAT:
+        target, label = _SUBCATEGORY_FLAT[upper], f"Subcategory: {upper}"
+    else:
+        print(f"'{category}' not found. Run available() with no args to see options.")
+        return
+
+    print(f"{label}  ({len(target)} series)\n")
+    for series_id, (name, freq) in target.items():
+        print(f"  {series_id:<24s}  {name:<40s}  [{freq}]")
+    print()
+
+
+def search(keyword: str) -> list[str]:
+    """Search the catalog by keyword, case-insensitive.
+
+    Matches the FRED series id AND the friendly name, so both
+    `search("CPIAUCSL")` and `search("inflation")` work.
+
+    Returns the list of matching series ids.
+    """
+    kw = keyword.lower()
+    hits = [
+        series_id
+        for series_id, (name, _freq) in ALL_SERIES.items()
+        if kw in series_id.lower() or kw in name.lower()
+    ]
+
+    if not hits:
+        print(f"No series matching '{keyword}'.")
+        return []
+
+    print(f"Found {len(hits)} series matching '{keyword}':\n")
+    for series_id in hits:
+        name, freq = ALL_SERIES[series_id]
+        print(f"  {series_id:<24s}  {name:<40s}  [{freq}]")
+    print()
+    return hits
+
+
+def info(series_id: str) -> None:
+    """Print everything known about one series::
+
+        info("CPIAUCSL")
+    """
+    key = series_id.upper()
+    if key not in ALL_SERIES:
+        print(f"'{series_id}' not found. Try search('{series_id}').")
+        return
+
+    name, freq = ALL_SERIES[key]
+
+    parent_cat = parent_sub = None
+    for cat_name, cat_dict in CATEGORIES.items():
+        if key in cat_dict:
+            parent_cat = cat_name
+            for sub_name, sub_dict in SUBCATEGORIES.get(cat_name, {}).items():
+                if key in sub_dict:
+                    parent_sub = sub_name
+            break
+
+    _FREQ_WORDS = {
+        "D": "daily",
+        "W": "weekly",
+        "M": "monthly",
+        "Q": "quarterly",
+        "A": "annual",
+        "SEP": "irregular (FOMC projections)",
+    }
+
+    print(f"\n  FRED id:      {key}")
+    print(f"  Name:         {name}")
+    print(f"  Category:     {parent_cat or '-'}")
+    print(f"  Subcategory:  {parent_sub or '-'}")
+    print(f"  Native freq:  {freq}  ({_FREQ_WORDS.get(freq, 'unknown')})")
+    print(f"  FRED page:    https://fred.stlouisfed.org/series/{key}\n")
 
 
 class Config:
@@ -55,7 +220,12 @@ class Config:
         self.START = start
         self.RESAMPLE_RULE = resample_rule
         self.MEAN_FREQS = mean_freqs if mean_freqs is not None else {"D"}
-        self.SERIES = series  # None → use ALL_SERIES
+        # Resolved here so `series=` accepts a category name, a subcategory, a
+        # single FRED id, or a list of any of those, as well as the dict it has
+        # always taken. A dict passes through untouched and None still means
+        # the whole catalog, so nothing that worked before changes.
+        self._series_input = series
+        self.SERIES = resolve_series(series)
         self.INFLATION_TARGET = pi_star if pi_star else 2.0
         self.NATURAL_RATE_UNEMPLOYMENT = u_star if u_star else 4.0
 
