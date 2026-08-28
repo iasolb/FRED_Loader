@@ -90,12 +90,13 @@ def test_no_spec_requires_a_column_nothing_can_supply():
 
 
 def test_an_empty_frame_resolves_only_the_dependency_free_scores():
-    """Two specs require nothing, so they always resolve. Everything else
-    should be skipped rather than attempted."""
+    """After adding requires_any support, no spec is dependency-free: every
+    spec either requires specific columns (requires) or at least one of a set
+    (requires_any). An empty frame should therefore resolve nothing."""
     result = available_scores(pd.DataFrame())
-    free = {spec.name for spec in _REGISTRY if not spec.requires}
-    assert set(result["resolved"]) == free
-    assert result["skipped_count"] == len(_REGISTRY) - len(free)
+    assert result["resolved"] == []
+    assert result["resolved_count"] == 0
+    assert result["skipped_count"] == len(_REGISTRY)
 
 
 def test_one_raw_column_resolves_its_direct_score():
@@ -137,34 +138,60 @@ def test_the_dry_run_counts_the_index_as_an_available_column():
 # ── score(), the happy path ───────────────────────────────────────────────
 
 
-def test_the_dry_run_promise_is_a_superset_of_what_score_delivers():
-    """KNOWN GAP, asserted as it is rather than as it should be.
-
-    `available_scores` promises the `produces` of every resolved spec, but two
-    specs declare `requires=set()` and then return early if none of their
-    OPTIONAL inputs are present (`expectations_anchoring` wants any of the
-    inflation-expectation series, `activity_momentum` likewise). So the dry run
-    always lists them as resolved and always promises their columns, and
-    `score` does not always deliver them.
-
-    The registry has no way to say "any one of these", which is what those two
-    specs actually need, so this is a design gap rather than a typo. Asserting
-    the superset relation pins current behaviour without pretending the
-    over-promise is correct.
-    """
+def test_the_dry_run_promise_is_exact_for_conditional_scores():
+    """The dry run must NOT over-promise: when none of the optional inputs for
+    expectations_anchoring or activity_momentum are present, those scores must
+    appear in skipped and their columns must not appear in columns_added."""
     df = frame(Headline_CPI=rising(), FedFunds_Rate=np.full(N, 2.0))
-    promised = set(available_scores(df)["columns_added"])
-    delivered = set(score(df).columns)
+    result = available_scores(df)
 
-    conditional = {
-        "Expect_Anchor_Score",
-        "Expect_Anchor_Signed",
-        "Activity_Momentum",
-    }
-    # Everything promised that is not one of the conditional columns must show up.
-    assert (promised - conditional) <= delivered
-    # And the conditional ones are exactly the promise that went unmet here.
-    assert not (conditional & delivered)
+    conditional_scores = {"expectations_anchoring", "activity_momentum"}
+    conditional_cols = {"Expect_Anchor_Score", "Expect_Anchor_Signed", "Activity_Momentum"}
+
+    assert not (conditional_scores & set(result["resolved"]))
+    assert conditional_scores <= set(result["skipped"])
+    assert not (conditional_cols & set(result["columns_added"]))
+
+
+def test_expectations_anchoring_resolves_with_one_optional_input():
+    """Given a frame with only Breakeven_Inflation_5Y, expectations_anchoring
+    must appear in resolved and deliver its columns."""
+    df = frame(Breakeven_Inflation_5Y=np.full(N, 2.5))
+    result = available_scores(df)
+    assert "expectations_anchoring" in result["resolved"]
+    assert "Expect_Anchor_Score" in result["columns_added"]
+
+    out = score(df)
+    assert "Expect_Anchor_Score" in out.columns
+
+
+def test_expectations_anchoring_skipped_without_any_optional_input():
+    """Given a frame with none of the three expectation series, the score must
+    be skipped and its columns must be absent."""
+    df = frame(Headline_CPI=rising())
+    result = available_scores(df)
+    assert "expectations_anchoring" in result["skipped"]
+    assert "Expect_Anchor_Score" not in result["columns_added"]
+
+    out = score(df)
+    assert "Expect_Anchor_Score" not in out.columns
+
+
+def test_requires_any_single_member_is_sufficient_for_every_spec():
+    """For every spec that declares requires_any, supplying any single member
+    of requires_any (plus all of requires) must be enough for _resolve to
+    include that spec."""
+    from fred_loader.macro_scores import _resolve
+
+    for spec in _REGISTRY:
+        if not spec.requires_any:
+            continue
+        for member in spec.requires_any:
+            cols = spec.requires | {member}
+            resolved_names = {s.name for s in _resolve(cols)}
+            assert spec.name in resolved_names, (
+                f"spec '{spec.name}' not resolved when requires_any member '{member}' present"
+            )
 
 
 def test_score_keeps_the_original_columns_and_rows():

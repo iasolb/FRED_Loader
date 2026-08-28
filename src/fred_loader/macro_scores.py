@@ -69,8 +69,10 @@ class _ScoreSpec:
     category : str
         One of 'derived', 'flags', 'continuous', 'leads_lags'.
     requires : set[str]
-        Column names that MUST exist before this block can run.
+        Column names that MUST ALL exist before this block can run.
         Can include raw series names OR columns produced by other specs.
+    requires_any : set[str]
+        If non-empty, at least ONE member must exist before this block can run.
     produces : list[str]
         Column names this block adds to the DataFrame.
     fn : callable
@@ -80,6 +82,7 @@ class _ScoreSpec:
     name: str
     category: str
     requires: set = field(default_factory=set)
+    requires_any: set = field(default_factory=set)
     produces: list = field(default_factory=list)
     fn: Callable = field(default=blank)
 
@@ -87,7 +90,7 @@ class _ScoreSpec:
 _REGISTRY: list[_ScoreSpec] = []
 
 
-def _register(name: str, category: str, requires: set, produces: list):
+def _register(name: str, category: str, requires: set, produces: list, requires_any: set = None):
     """Decorator that registers a scoring function."""
 
     def decorator(fn):
@@ -96,6 +99,7 @@ def _register(name: str, category: str, requires: set, produces: list):
                 name=name,
                 category=category,
                 requires=set(requires),
+                requires_any=set(requires_any) if requires_any else set(),
                 produces=list(produces),
                 fn=fn,
             )
@@ -124,7 +128,9 @@ def _resolve(columns: set[str]) -> list[_ScoreSpec]:
         changed = False
         still_remaining = []
         for spec in remaining:
-            if spec.requires.issubset(available):
+            if spec.requires.issubset(available) and (
+                not spec.requires_any or spec.requires_any & available
+            ):
                 resolved.append(spec)
                 available.update(spec.produces)
                 changed = True
@@ -596,6 +602,7 @@ def _fiscal_monetary_conflict(df):
     "expectations_anchoring",
     "continuous",
     requires=set(),
+    requires_any={"UMich_Inflation_Expectations", "Breakeven_Inflation_5Y", "Breakeven_Inflation_10Y"},
     produces=["Expect_Anchor_Score", "Expect_Anchor_Signed"],
 )
 def _expectations_anchoring(df):
@@ -657,7 +664,11 @@ def _housing_pressure(df):
 
 
 @_register(
-    "activity_momentum", "continuous", requires=set(), produces=["Activity_Momentum"]
+    "activity_momentum",
+    "continuous",
+    requires=set(),
+    requires_any={"Industrial_Production", "Retail_Sales", "Personal_Consumption_Expenditures", "Nonfarm_Payrolls"},
+    produces=["Activity_Momentum"],
 )
 def _activity_momentum(df):
     def _trailing_z(s, window=_W52 * 3):
