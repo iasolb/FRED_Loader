@@ -72,6 +72,19 @@ def _config(tmp_path, catalog=None, **kwargs):
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_rate_limit_sleep():
+    """The client is faked, so the per-series rate-limit delay is dead time.
+
+    Without this the module really sleeps once per series and the suite takes
+    just over two minutes, almost all of it in the default-catalog test. The
+    test that asserts on the delay patches ``time.sleep`` itself, which nests
+    over this cleanly and still counts only its own calls.
+    """
+    with patch("fred_loader.utils.time.sleep"):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Test 1: successful pull returns one wide frame with friendly names
 # ---------------------------------------------------------------------------
