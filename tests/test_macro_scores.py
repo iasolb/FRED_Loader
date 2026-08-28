@@ -27,7 +27,10 @@ from fred_loader.macro_scores import (
     _REGISTRY,
     _SAHM_THRESHOLD,
     _U_STAR,
+    _activity_momentum,
+    _expectations_anchoring,
     available_scores,
+    blank,
     list_scored_columns,
     score,
 )
@@ -414,3 +417,285 @@ def test_mandate_tension_reports_a_regime_label():
     out = score(frame(Core_PCE=rising(start=100.0, step=0.3), Unemployment_Rate=np.full(N, 4.0)))
     assert "Mandate_Regime" in out.columns
     assert out["Mandate_Regime"].notna().any()
+
+
+def test_blank_returns_the_same_frame():
+    df = frame(Headline_CPI=rising())
+    assert blank(df) is df
+
+
+def test_real_10y_rates_subtract_cpi_inflation_from_nominal_yield():
+    out = score(frame(Headline_CPI=rising(), Treasury_10Y=np.full(N, 4.5)))
+    expected = 4.5 - out["CPI_YoY"]
+    pd.testing.assert_series_equal(out["Real_10Y_CPI"], expected, check_names=False)
+
+
+def test_jolts_ue_ratio_scales_unemployment_from_percent_to_people():
+    out = score(
+        frame(
+            JOLTS_Job_Openings=np.full(N, 8_000.0),
+            Unemployment_Rate=np.full(N, 5.0),
+        )
+    )
+    expected_unemployed = pd.Series(np.full(N, 8_000.0))
+    expected_ratio = pd.Series(np.ones(N))
+    pd.testing.assert_series_equal(
+        out["Unemployed_Approx"], expected_unemployed, check_names=False, check_index=False
+    )
+    pd.testing.assert_series_equal(
+        out["JOLTS_UE_Ratio"], expected_ratio, check_names=False, check_index=False
+    )
+
+
+def test_deficit_gdp_pct_annualizes_monthly_deficit_before_scaling():
+    out = score(
+        frame(
+            Monthly_Treasury_Statement_Deficit=np.full(N, 250_000.0),
+            Nominal_GDP=np.full(N, 30_000.0),
+        )
+    )
+    expected = pd.Series(np.full(N, 10.0))
+    pd.testing.assert_series_equal(
+        out["Deficit_GDP_Pct"], expected, check_names=False, check_index=False
+    )
+
+
+def test_sep_median_forward_fill_feeds_term_premium_proxy():
+    sep = np.array([np.nan, 2.5, np.nan, np.nan, 3.0] + [3.0] * (N - 5))
+    out = score(frame(SEP_FedFunds_Median=sep, Treasury_10Y=np.full(N, 4.0)))
+    expected_med = pd.Series(sep).ffill()
+    pd.testing.assert_series_equal(
+        out["SEP_FFR_Med"], expected_med, check_names=False, check_index=False
+    )
+    pd.testing.assert_series_equal(
+        out["Term_Premium_Proxy"], 4.0 - expected_med, check_names=False, check_index=False
+    )
+
+
+def test_curve_inversion_10y3m_flags_only_negative_spreads():
+    spread = np.where(np.arange(N) < 100, 0.25, -0.25)
+    out = score(frame(Yield_Curve_10Y_3M=spread))
+    flag = out["Flag_Curve_Inverted_10Y3M"]
+    assert flag.iloc[:100].eq(0).all()
+    assert flag.iloc[100:].eq(1).all()
+
+
+def test_fci_contradiction_requires_easy_financial_conditions_despite_tight_policy():
+    out = score(
+        frame(
+            Chicago_Fed_Financial_Conditions=np.array([-0.3, -0.1, -0.3]),
+            FedFunds_Rate=np.array([3.2, 3.2, 2.8]),
+            SEP_FedFunds_Median_LongerRun=np.array([2.5, 2.5, 2.5]),
+        )
+    )
+    expected = pd.Series([1, 0, 0])
+    pd.testing.assert_series_equal(
+        out["Flag_FCI_Contradiction"], expected, check_names=False, check_index=False
+    )
+
+
+def test_deanchor_flags_capture_gap_size_and_direction():
+    out = score(
+        frame(
+            UMich_Inflation_Expectations=np.array([4.5, 0.5, 4.2, 2.9]),
+            CPI_YoY=np.array([2.0, 2.0, 2.0, 2.0]),
+        )
+    )
+    pd.testing.assert_series_equal(
+        out["Expect_Gap_UMich"],
+        pd.Series([2.5, -1.5, 2.2, 0.9]),
+        check_names=False,
+        check_index=False,
+    )
+    pd.testing.assert_series_equal(
+        out["Flag_Deanchor_Mild"],
+        pd.Series([1, 1, 1, 0]),
+        check_names=False,
+        check_index=False,
+    )
+    pd.testing.assert_series_equal(
+        out["Flag_Deanchor_Severe"],
+        pd.Series([1, 0, 1, 0]),
+        check_names=False,
+        check_index=False,
+    )
+    pd.testing.assert_series_equal(
+        out["Flag_Deanchor_Hot"],
+        pd.Series([1, 0, 1, 0]),
+        check_names=False,
+        check_index=False,
+    )
+    pd.testing.assert_series_equal(
+        out["Flag_Deanchor_Cold"],
+        pd.Series([0, 1, 0, 0]),
+        check_names=False,
+        check_index=False,
+    )
+
+
+def test_labor_divergence_flags_opposing_moves_in_unemployment_and_jolts_ratio():
+    out = score(
+        frame(
+            JOLTS_UE_Ratio=np.concatenate([np.full(13, 1.3), np.full(N - 13, 1.1)]),
+            Unemployment_Rate=np.concatenate([np.full(13, 4.0), np.full(N - 13, 4.3)]),
+        )
+    )
+    expected_ratio_chg = pd.Series(out["JOLTS_UE_Ratio"]).diff(13)
+    expected_ue_chg = pd.Series(out["Unemployment_Rate"]).diff(13)
+    pd.testing.assert_series_equal(
+        out["JOLTS_UE_Ratio_chg"], expected_ratio_chg, check_names=False, check_index=False
+    )
+    pd.testing.assert_series_equal(
+        out["UE_chg_13w"], expected_ue_chg, check_names=False, check_index=False
+    )
+    assert out["Flag_Labor_Divergence"].iloc[13:].max() == 1
+
+
+def test_hy_stress_flag_trips_only_above_five_percent():
+    out = score(frame(HY_OAS_Spread=np.array([4.9, 5.0, 5.1])))
+    pd.testing.assert_series_equal(
+        out["Flag_HY_Stress"], pd.Series([0, 0, 1]), check_names=False, check_index=False
+    )
+
+
+def test_fiscal_dominance_requires_rising_debt_falling_rates_and_high_inflation():
+    out = score(
+        frame(
+            Debt_to_GDP=np.concatenate([np.full(26, 100.0), np.full(N - 26, 101.0)]),
+            FedFunds_Rate=np.concatenate([np.full(26, 3.0), np.full(N - 26, 2.5)]),
+            Core_PCE_YoY=np.full(N, 2.5),
+        )
+    )
+    pd.testing.assert_series_equal(
+        out["Debt_GDP_chg_26w"],
+        pd.Series(out["Debt_to_GDP"]).diff(26),
+        check_names=False,
+        check_index=False,
+    )
+    pd.testing.assert_series_equal(
+        out["FFR_chg_26w"],
+        pd.Series(out["FedFunds_Rate"]).diff(26),
+        check_names=False,
+        check_index=False,
+    )
+    assert out["Flag_Fiscal_Dominance_Risk"].iloc[26:].max() == 1
+
+
+@pytest.mark.parametrize(
+    ("core_pce_yoy", "unemployment_rate", "expected_regime"),
+    [
+        (2.4, 4.4, 3),
+        (1.6, 3.6, -3),
+        (2.4, 3.6, 1),
+        (1.6, 4.4, -1),
+    ],
+)
+def test_mandate_regime_covers_each_non_neutral_branch(
+    core_pce_yoy, unemployment_rate, expected_regime
+):
+    out = score(
+        frame(
+            Core_PCE_YoY=np.full(N, core_pce_yoy),
+            Unemployment_Rate=np.full(N, unemployment_rate),
+        )
+    )
+    assert out["Mandate_Regime"].dropna().eq(expected_regime).all()
+
+
+def test_fiscal_monetary_conflict_is_the_policy_and_deficit_product():
+    out = score(
+        frame(
+            Policy_Stance_SEP=np.array([1.0, -0.5, 0.25]),
+            Deficit_GDP_Pct=np.array([4.0, 4.0, -2.0]),
+        )
+    )
+    pd.testing.assert_series_equal(
+        out["Fiscal_Monetary_Conflict"],
+        pd.Series([4.0, -2.0, -0.5]),
+        check_names=False,
+        check_index=False,
+    )
+
+
+def test_expectations_anchoring_returns_unchanged_without_optional_inputs():
+    df = frame()
+    out = _expectations_anchoring(df)
+    assert out is df
+    assert list(out.columns) == []
+
+
+def test_fci_transmission_tight_policy_times_easier_conditions_is_positive():
+    out = score(
+        frame(
+            Policy_Stance_SEP=np.array([1.0, -0.5, 0.25]),
+            Chicago_Fed_Financial_Conditions=np.array([-0.4, 0.2, -0.1]),
+        )
+    )
+    pd.testing.assert_series_equal(
+        out["FCI_Transmission"],
+        pd.Series([0.4, 0.1, 0.025]),
+        check_names=False,
+        check_index=False,
+    )
+
+
+def test_credit_impulse_is_the_change_in_annualized_credit_growth():
+    values = rising(start=1_000.0, step=5.0)
+    out = score(frame(Consumer_Credit_Total=values))
+    growth = pd.Series(values).pct_change(13) * 4 * 100
+    expected = growth.diff(13)
+    pd.testing.assert_series_equal(
+        out["Credit_Impulse"], expected, check_names=False, check_index=False
+    )
+
+
+def test_housing_pressure_combines_rate_and_price_pressure_against_trailing_means():
+    home_prices = rising(start=100.0, step=1.0)
+    mortgage_rates = rising(start=4.0, step=0.01)
+    out = score(
+        frame(
+            Case_Shiller_Home_Price=home_prices,
+            Mortgage_Rate_30Y=mortgage_rates,
+        )
+    )
+    expected_yoy = pd.Series(home_prices).pct_change(52) * 100
+    expected_pressure = (
+        pd.Series(mortgage_rates) - pd.Series(mortgage_rates).rolling(260, min_periods=52).mean()
+    ) + (expected_yoy - expected_yoy.rolling(260, min_periods=52).mean())
+    pd.testing.assert_series_equal(
+        out["Home_Price_YoY"], expected_yoy, check_names=False, check_index=False
+    )
+    pd.testing.assert_series_equal(
+        out["Housing_Pressure"], expected_pressure, check_names=False, check_index=False
+    )
+
+
+def test_activity_momentum_averages_trailing_z_scores_of_available_components():
+    industrial = rising(start=100.0, step=0.5)
+    payrolls = rising(start=10_000.0, step=50.0)
+    out = score(frame(Industrial_Production=industrial, Nonfarm_Payrolls=payrolls))
+
+    def trailing_z(values):
+        series = pd.Series(values)
+        return (series - series.rolling(156, min_periods=52).mean()) / series.rolling(
+            156, min_periods=52
+        ).std()
+
+    expected = pd.concat([trailing_z(industrial), trailing_z(payrolls)], axis=1).mean(axis=1)
+    pd.testing.assert_series_equal(
+        out["Activity_Momentum"], expected, check_names=False, check_index=False
+    )
+
+
+def test_activity_momentum_returns_unchanged_without_any_optional_component():
+    df = frame()
+    out = _activity_momentum(df)
+    assert out is df
+    assert list(out.columns) == []
+
+
+def test_score_accepts_a_date_column_and_restores_it_after_scoring():
+    df = pd.DataFrame({"date": weeks(), "Headline_CPI": rising()})
+    out = score(df)
+    assert "date" in out.columns
+    assert isinstance(out.index, pd.RangeIndex)
