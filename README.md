@@ -1,14 +1,17 @@
 # FRED_Loader
 
-A Python wrapper around the FRED API that puts readable names in front of
-raw series codes, with batching and rate-limit handling. Installs as
-`fred-loader`.
+A Python wrapper around the Federal Reserve FRED API that abstracts away
+series IDs, resampling rules, and macro scoring behind a clean,
+human-readable interface. Installs as `fred-loader`, for anyone who pulls
+macroeconomic data into pandas.
 
 ## Install
 
 ```bash
-pip install -e .
+pip install fred-loader
 ```
+
+Or from a checkout of this repository: `pip install -e .`.
 
 ## Quickstart
 
@@ -41,9 +44,4 @@ src/fred_loader/
   load.py           # pull_fred entry point
   series.py         # series catalog: categories and subcategories
   macro_scores.py   # scoring layer: score, available_scores
-demo/               # example notebook, data, and outputs
 ```
-
-## Start here
-
-Open the example notebook in `demo/` for a worked pull.
